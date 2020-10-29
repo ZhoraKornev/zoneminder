@@ -96,7 +96,7 @@ VOLUME \
 	["/var/cache/zoneminder"]
 
 FROM build7 as build8
-EXPOSE 80 443 9000
+EXPOSE 80 9000
 
 FROM build8
 CMD ["/sbin/my_init"]
