@@ -1,6 +1,8 @@
 #!/bin/bash
 
-docker run -d --name="Zoneminder" \
+docker stop zoneminder_docker --force
+
+docker run -d --name="zoneminder_docker" \
 --net="bridge" \
 --privileged="true" \
 -p 8080:80/tcp \
