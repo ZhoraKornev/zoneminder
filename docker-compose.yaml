@@ -10,7 +10,7 @@ services:
         network_mode: "bridge"
         privileged: true
         environment:
-            - TZ=Europe/Kyiv
+            - TZ=Europe/Kiev
             - SHMEM=50%
             - PUID=99
             - PGID=100
