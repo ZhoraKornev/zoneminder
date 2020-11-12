@@ -7,7 +7,7 @@ docker run -d --name="zoneminder_docker" \
 --privileged="true" \
 -p 8080:80/tcp \
 -p 9000:9000/tcp \
--e TZ="Europe/Kyiv" \
+-e TZ="Europe/Kiev" \
 -e SHMEM="50%" \
 -e PUID="99" \
 -e PGID="100" \
