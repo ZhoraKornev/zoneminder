@@ -26,7 +26,9 @@ import traceback
 import pyzm.ZMLog as log 
 import zmes_hook_helpers.utils as utils
 import zmes_hook_helpers.common_params as g
-from pyzm import __version__
+from pyzm import __version__ as pyzm_version
+from zmes_hook_helpers import __version__ as hooks_version
+
 
 auth_header = None
 
@@ -160,9 +162,14 @@ def main_handler():
     ap.add_argument('-r', '--reason', help='reason for event (notes field in ZM)')
 
     ap.add_argument('-n', '--notes', help='updates notes field in ZM with detections', action='store_true')
+    ap.add_argument('-d', '--debug', help='enables debug on console', action='store_true')
 
     args, u = ap.parse_known_args()
     args = vars(args)
+
+    if args.get('version'):
+        print('hooks:{} pyzm:{}'.format(hooks_version, pyzm_version))
+        exit(0)
 
     if not args.get('config'):
         print ('--config required')
@@ -174,6 +181,11 @@ def main_handler():
 
     utils.get_pyzm_config(args)
 
+    if args.get('debug'):
+        g.config['pyzm_overrides']['dump_console'] = True
+        g.config['pyzm_overrides']['log_debug'] = True
+        g.config['pyzm_overrides']['log_level_debug'] = 4
+        g.config['pyzm_overrides']['log_debug_target'] = None
 
     if args.get('monitorid'):
         log.init(name='zmesdetect_' + 'm' + args.get('monitorid'), override=g.config['pyzm_overrides'])
@@ -193,11 +205,8 @@ def main_handler():
     except ImportError as e:
         g.logger.Fatal (f'{e}: You might not have installed OpenCV as per install instructions. Remember, it is NOT automatically installed')
 
-    g.logger.Info('---------| pyzm version: {}, ES version: {} , OpenCV version: {}|------------'.format(__version__, es_version, cv2.__version__))
-    if args.get('version'):
-        print(__version__)
-        exit(0)
-
+    g.logger.Info('---------| pyzm version:{}, hook version:{},  ES version:{} , OpenCV version:{}|------------'.format(pyzm_version, hooks_version, es_version, cv2.__version__))
+   
 
 
     # load modules that depend on cv2
@@ -224,7 +233,6 @@ def main_handler():
     if not g.config['ml_gateway']:
         g.logger.Info('Importing local classes for Object/Face')
         import pyzm.ml.object as object_detection
-        import pyzm.ml.hog as hog
     else:
         g.logger.Info('Importing remote shim classes for Object/Face')
         from zmes_hook_helpers.apigw import ObjectRemote, FaceRemote, AlprRemote
@@ -244,13 +252,16 @@ def main_handler():
     else:
         g.logger.Debug(1,'TESTING ONLY: reading image from {}'.format(args.get('file')))
         filename1 = args.get('file')
-        filename1_bbox = g.config['image_path']+'/'+append_suffix(filename1, '-bbox')
+        filename1_bbox = g.config['image_path']+'/'+os.path.basename(append_suffix(filename1, '-bbox'))
         filename2 = None
         filename2_bbox = None
 
     start = datetime.datetime.now()
 
     obj_json = []
+
+
+
     # Read images to analyze
     image2 = None
     image1 = cv2.imread(filename1)
@@ -276,7 +287,7 @@ def main_handler():
         g.polygons.append({
             'name': 'full_image',
             'value': [(0, 0), (oldw, 0), (oldw, oldh), (0, oldh)],
-            'pattern': g.config.get('object_detection_pattern')
+            'pattern':None
 
         })
         g.logger.Debug(1,
@@ -321,8 +332,7 @@ def main_handler():
             else:
             # print ("G LOGGER {}".format(g.logger))
                 m = object_detection.Object(logger=g.logger, options=g.config)
-        elif model == 'hog':
-            m = hog.Hog(options=g.config)
+       
         elif model == 'face':
             if g.config['ml_gateway']:
                 m = FaceRemote()
@@ -406,9 +416,7 @@ def main_handler():
                         if model == 'object':
                             import pyzm.ml.object as object_detection
                             m = object_detection.Object(logger=g.logger,options=g.config)
-                        elif model == 'hog':
-                            import pyzm.ml.hog as hog
-                            m = hog.Hog(options=g.config)
+                       
                         elif model == 'face':
                             import pyzm.ml.face as face
                             m = face.Face(
@@ -431,11 +439,8 @@ def main_handler():
             # to the allowed list or they will be thrown away during the intersection
             # check
             if model == 'face':
-            
                 match = match + [g.config['unknown_face_name']]  # unknown face
-
                 if g.config['ml_gateway'] and not remote_failed:
-
                     data_file = g.config[
                         'base_data_path'] + '/misc/known_face_names.json'
                     if os.path.exists(data_file):

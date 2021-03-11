@@ -1,5 +1,38 @@
 ## Change Log
 
+### 2021-02-16
+- Update zmNinja Event Notification Server to version 6.1.12.
+
+### 2021-01-30
+- Update zmNinja Event Notification Server to version 6.1.11.
+
+### 2021-01-26
+- Update zmNinja Event Notification Server to version 6.1.10.
+
+### 2021-01-24
+- Preliminary release of machine learning Docker.
+
+### 2021-01-19
+- Prepare for Zoneminder ES/ML Docker container with ES/ML preloaded.
+
+### 2021-01-07
+- Update opencv.sh to Ubuntu 20.04.
+- Remove /config/mysql/ib_logfile* files to insure that mysql starts.
+- Increase shm-size to 8G.
+
+### 2021-01-03
+- Fix syslog-ng configuration file version.
+- Update zmNinja Event Notification Server to version 6.1.5.
+
+### 2021-01-02
+- Update Docker baseimage to Focal Alpha (Ubuntu 20.04).
+- Remove SHMEM environment variable and set --shm-size instead.
+- Turn off privileged mode.
+- Update zmNinja Event Notification Server to version 6.1.0.
+
+### 2020-11-18
+- Add NO_START_ZM environment variable to keep MySql and Zoneminder from starting so the docker stays running and a user can troubleshoot.
+
 ### 2020-10-24
 - Update zmNinja Event Notification Server to version 6.0.5.
 - Update opencv to 4.3.

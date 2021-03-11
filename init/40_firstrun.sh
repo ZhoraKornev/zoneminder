@@ -14,23 +14,15 @@ else
 	echo "Using existing conf folder"
 fi
 
-if [ -f /root/zm.conf ]; then
-	echo "Moving zm.conf to config folder"
-	mv /root/zm.conf /config/conf/zm.default
-	cp /etc/zm/conf.d/README /config/conf/README
-else
-	echo "File zm.conf already moved"
-fi
+# Handle the zm.conf files
+echo "Copying zm.conf to config folder"
+mv /root/zm.conf /config/conf/zm.default
+cp /etc/zm/conf.d/README /config/conf/README
 
-# Get the latest ES bundle
-cd /root
-rm -rf zmeventnotification
-wget -q https://github.com/dlandon/zoneminder/raw/master/zmeventnotification/EventServer.tgz
-if [ -f EventServer.tgz ]; then
-	tar -xf EventServer.tgz
-	rm EventServer.tgz
-else
-	echo "Error: Cannot download the ES server bundle"
+# Copy custom 99-mysql.conf to /etc/zm/conf.d/
+if [ -f /config/conf/99-mysql.conf ]; then
+	echo "Copy custom 99-mysql.conf to /etc/zm/conf.d/"
+	cp /config/conf/99-mysql.conf /etc/zm/conf.d/99-mysql.conf
 fi
 
 # Handle the zmeventnotification.ini file
@@ -109,6 +101,17 @@ else
 	echo "Pushover api already moved"
 fi
 
+# Handle the es_rules.json
+if [ -f /root/zmeventnotification/es_rules.json ]; then
+	echo "Moving es_rules.json"
+	cp /root/zmeventnotification/es_rules.json /config/es_rules.json.default
+	if [ ! -f /config/es_rules.json ]; then
+		mv /root/zmeventnotification/es_rules.json /config/es_rules.json
+	else
+		rm -rf /etc/zm/es_rules.json
+	fi
+fi
+
 # Move ssmtp configuration if it doesn't exist
 if [ ! -d /config/ssmtp ]; then
 	echo "Moving ssmtp to config folder"
@@ -162,6 +165,7 @@ mkdir -p /var/lib/zmeventnotification/push
 mkdir -p /config/push
 rm -rf /var/lib/zmeventnotification/push/tokens.txt
 ln -sf /config/push/tokens.txt /var/lib/zmeventnotification/push/tokens.txt
+ln -sf /config/es_rules.json /etc/zm/es_rules.json
 
 # ssmtp
 rm -r /etc/ssmtp 
@@ -175,6 +179,13 @@ ln -s /config/mysql /var/lib/mysql
 PUID=${PUID:-99}
 PGID=${PGID:-100}
 usermod -o -u $PUID nobody
+
+# Check if the group with GUID passed as environment variable exists and create it if not.
+if ! getent group "$PGID" >/dev/null; then
+  groupadd -g "$PGID" env-provided-group
+  echo "Group with id: $PGID did not already exist, so we created it."
+fi
+
 usermod -g $PGID nobody
 usermod -d /config nobody
 
@@ -309,11 +320,6 @@ chown www-data:www-data /etc/zm/zmeventnotification.ini
 # Symbolink for /config/secrets.ini
 ln -sf /config/secrets.ini /etc/zm/
 
-# Fix memory issue
-echo "Setting shared memory to : $SHMEM of `awk '/MemTotal/ {print $2}' /proc/meminfo` bytes"
-umount /dev/shm
-mount -t tmpfs -o rw,nosuid,nodev,noexec,relatime,size=${SHMEM} tmpfs /dev/shm
-
 # Set multi-ports in apache2 for ES.
 # Start with default configuration.
 cp /etc/apache2/ports.conf.default /etc/apache2/ports.conf
@@ -340,232 +346,173 @@ else
 	fi
 fi
 
-# Install hook packages, if enabled
-if [ "$INSTALL_HOOK" == "1" ]; then
-	echo "Installing machine learning modules & hooks..."
-
-	if [ ! -f /root/setup.py ]; then
-		# If hook folder exists, copy files into image
-		if [ ! -d /config/hook ]; then
-			echo "Creating hook folder in config folder"
-			mkdir /config/hook
-		fi
-
-		# Python modules needed for hook processing
-		apt-get -y install python3-pip cmake
-		apt-get -y install libopenblas-dev liblapack-dev libblas-dev
-
-		# pip3 will take care of installing dependent packages
-		pip3 install future
-		pip3 install /root/zmeventnotification
-
-		cd ~
-	    rm -rf /root/zmeventnotification/zmes_hook_helpers
-	fi
-
-	# Download models files
-	if [ "$INSTALL_TINY_YOLOV3" == "1" ]; then
-		if [ ! -d /config/hook/models/tinyyolov3 ]; then
-			echo "Downloading tiny yolo models and configurations..."
-			mkdir -p /config/hook/models/tinyyolov3
-			wget https://pjreddie.com/media/files/yolov3-tiny.weights -O /config/hook/models/tinyyolov3/yolov3-tiny.weights
-			wget https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov3-tiny.cfg -O /config/hook/models/tinyyolov3/yolov3-tiny.cfg
-			wget https://raw.githubusercontent.com/pjreddie/darknet/master/data/coco.names -O /config/hook/models/tinyyolov3/coco.names
-		else
-			echo "Tiny Yolo V3 files have already been downloaded, skipping..."
-		fi
-	fi
-
-	if [ "$INSTALL_YOLOV3" == "1" ]; then
-		if [ ! -d /config/hook/models/yolov3 ]; then
-			echo "Downloading yolo models and configurations..."
-			mkdir -p /config/hook/models/yolov3
-			wget https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov3.cfg -O /config/hook/models/yolov3/yolov3.cfg
-			wget https://raw.githubusercontent.com/pjreddie/darknet/master/data/coco.names -O /config/hook/models/yolov3/coco.names
-			wget https://pjreddie.com/media/files/yolov3.weights -O /config/hook/models/yolov3/yolov3.weights
-		else
-			echo "Yolo V3 files have already been downloaded, skipping..."
-	    fi
-	fi
-
-	if [ "$INSTALL_TINY_YOLOV4" == "1" ]; then
-		if [ ! -d /config/hook/models/tinyyolov4 ]; then
-			echo "Downloading tiny yolo models and configurations..."
-			mkdir -p /config/hook/models/tinyyolov4
-			wget https://github.com/AlexeyAB/darknet/releases/download/darknet_yolo_v4_pre/yolov4-tiny.weights -O /config/hook/models/tinyyolov4/yolov4-tiny.weights
-			wget https://raw.githubusercontent.com/AlexeyAB/darknet/master/cfg/yolov4-tiny.cfg -O /config/hook/models/tinyyolov4/yolov4-tiny.cfg
-			wget https://raw.githubusercontent.com/pjreddie/darknet/master/data/coco.names -O /config/hook/models/tinyyolov4/coco.names
-		else
-			echo "Tiny Yolo V4 files have already been downloaded, skipping..."
-		fi
-	fi
-
-	if [ "$INSTALL_YOLOV4" == "1" ]; then
-		if [ ! -d /config/hook/models/yolov4 ]; then
-			echo "Downloading yolo models and configurations..."
-			mkdir -p /config/hook/models/yolov4
-			wget https://raw.githubusercontent.com/AlexeyAB/darknet/master/cfg/yolov4.cfg -O /config/hook/models/yolov4/yolov4.cfg
-			wget https://raw.githubusercontent.com/pjreddie/darknet/master/data/coco.names -O /config/hook/models/yolov4/coco.names
-			wget https://github.com/AlexeyAB/darknet/releases/download/darknet_yolo_v3_optimal/yolov4.weights -O /config/hook/models/yolov4/yolov4.weights
-		else
-			echo "Yolo V4 files have already been downloaded, skipping..."
-	    fi
-	fi
-
-	# Handle the objectconfig.ini file
-	if [ -f /root/zmeventnotification/objectconfig.ini ]; then
-		echo "Moving objectconfig.ini"
-		cp /root/zmeventnotification/objectconfig.ini /config/hook/objectconfig.ini.default
-		if [ ! -f /config/hook/objectconfig.ini ]; then
-			mv /root/zmeventnotification/objectconfig.ini /config/hook/objectconfig.ini
-		else
-			rm -rf /root/zmeventnotification/objectconfig.ini
-		fi
-	else
-		echo "File objectconfig.ini already moved"
-	fi
-
-	# Handle the config_upgrade script
-	if [ -f /root/zmeventnotification/config_upgrade.py ]; then
-		echo "Moving config_upgrade.py"
-		mv /root/zmeventnotification/config_upgrade.py /config/hook/config_upgrade.py
-		mv /root/zmeventnotification/config_upgrade.sh /config/hook/config_upgrade.sh
-		chmod +x /config/hook/config_upgrade.*
-	else
-		echo "config_upgrade.py script not found"
-	fi
-
-	# Handle the zm_event_start.sh file
-	if [ -f /root/zmeventnotification/zm_event_start.sh ]; then
-		echo "Moving zm_event_start.sh"
-		mv /root/zmeventnotification/zm_event_start.sh /config/hook/zm_event_start.sh
-	else
-		echo "File zm_event_start.sh already moved"
-	fi
-
-	# Handle the zm_event_end.sh file
-	if [ -f /root/zmeventnotification/zm_event_end.sh ]; then
-		echo "Moving zm_event_end.sh"
-		mv /root/zmeventnotification/zm_event_end.sh /config/hook/zm_event_end.sh
-	else
-		echo "File zm_event_end.sh already moved"
-	fi
-
-	# Handle the zm_detect.py file
-	if [ -f /root/zmeventnotification/zm_detect.py ]; then
-		echo "Moving zm_detect.py"
-		mv /root/zmeventnotification/zm_detect.py /config/hook/zm_detect.py
-	else
-		echo "File zm_detect.py already moved"
-	fi
-
-	# Handle the zm_train_faces.py file
-	if [ -f /root/zmeventnotification/zm_train_faces.py ]; then
-		echo "Moving zm_train_faces.py"
-		mv /root/zmeventnotification/zm_train_faces.py /config/hook/zm_train_faces.py
-	else
-		echo "File zm_train_faces.py already moved"
-	fi
-
-	# Symbolic link for models in /config
-	rm -rf /var/lib/zmeventnotification/models
-	ln -sf /config/hook/models /var/lib/zmeventnotification/models
+# Move the yolo models to /var/lib/zmeventnotification
+if [ -d /root/models ]; then
+	mv /root/models/ /var/lib/zmeventnotification/
 	chown -R www-data:www-data /var/lib/zmeventnotification/models
-
-	# Symbolic link for known_faces in /config
-	rm -rf /var/lib/zmeventnotification/known_faces
-	ln -sf /config/hook/known_faces /var/lib/zmeventnotification/known_faces
-	chown -R www-data:www-data /var/lib/zmeventnotification/known_faces
-
-	# Symbolic link for unknown_faces in /config
-	rm -rf /var/lib/zmeventnotification/unknown_faces
-	ln -sf /config/hook/unknown_faces /var/lib/zmeventnotification/unknown_faces
-	chown -R www-data:www-data /var/lib/zmeventnotification/unknown_faces
-
-	# Symbolic link for misc in /config
-	rm -rf /var/lib/zmeventnotification/misc
-	ln -sf /config/hook/misc /var/lib/zmeventnotification/misc
-	chown -R www-data:www-data /var/lib/zmeventnotification/misc
-
-	# Create misc folder if it doesn't exist
-	if [ ! -d /config/hook/misc ]; then
-		echo "Creating hook/misc folder in config folder"
-		mkdir -p /config/hook/misc
-	fi
-
-	# Symbolic link for coral_edgetpu in /config
-	rm -rf /var/lib/zmeventnotification/coral_edgetpu
-	ln -sf /config/hook/coral_edgetpu /var/lib/zmeventnotification/coral_edgetpu
-	chown -R www-data:www-data /var/lib/zmeventnotification/coral_edgetpu
-
-	# Create coral_edgetpu folder if it doesn't exist
-	if [ ! -d /config/hook/coral_edgetpu ]; then
-		echo "Creating hook/coral_edgetpu folder in config folder"
-		mkdir -p /config/hook/coral_edgetpu
-	fi
-
-	# Symbolic link for hook files in /config
-	mkdir -p /var/lib/zmeventnotification/bin
-	ln -sf /config/hook/zm_detect.py /var/lib/zmeventnotification/bin/zm_detect.py
-	ln -sf /config/hook/zm_train_faces.py /var/lib/zmeventnotification/bin/zm_train_faces.py
-	ln -sf /config/hook/zm_event_start.sh /var/lib/zmeventnotification/bin/zm_event_start.sh
-	ln -sf /config/hook/zm_event_end.sh /var/lib/zmeventnotification/bin/zm_event_end.sh
-	chmod +x /var/lib/zmeventnotification/bin/*
-	ln -sf /config/hook/objectconfig.ini /etc/zm/
-
-	if [ "$INSTALL_FACE" == "1" ] && [ -f /root/zmeventnotification/setup.py ]; then
-		# Create known_faces folder if it doesn't exist
-		if [ ! -d /config/hook/known_faces ]; then
-			echo "Creating hook/known_faces folder in config folder"
-			mkdir -p /config/hook/known_faces
-		fi
-
-		# Create known_faces folder if it doesn't exist
-		if [ ! -d /config/hook/known_faces ]; then
-			echo "Creating hook/known_faces folder in config folder"
-			mkdir -p /config/hook/known_faces
-		fi
-
-		# Create unknown_faces folder if it doesn't exist
-		if [ ! -d /config/hook/unknown_faces ]; then
-			echo "Creating hook/unknown_faces folder in config folder"
-			mkdir -p /config/hook/unknown_faces
-		fi
-
-		# Install for face recognition
- 		pip3 install face_recognition
-	fi
-
-	# Set hook folder permissions
-	chown -R $PUID:$PGID /config/hook
-	chmod -R 777 /config/hook
-
-	echo "Hook installation completed"
-
-	# Compile opencv
-	echo "Compiling opencv - this will take a while..."
-	if [ -f /config/opencv/opencv_ok ] && [ `cat /config/opencv/opencv_ok` = 'yes' ]; then
-		if [ ! -f /root/setup.py ]; then
-			if [ -x /config/opencv/opencv.sh ]; then
-				/config/opencv/opencv.sh quiet >/dev/null
-			fi
-		fi
-	else
-		if [ -f /root/opencv_compile.sh ]; then
-			chmod +x /root/opencv_compile.sh
-			/root/opencv_compile.sh >/dev/null
-		fi
-	fi
-
-	mv /root/zmeventnotification/setup.py /root/setup.py
 fi
 
+# Create hook folder
+if [ ! -d /config/hook ]; then
+	echo "Creating /config/hook folder"
+	mkdir /config/hook
+fi
+
+# Handle the objectconfig.ini file
+if [ -f /root/zmeventnotification/objectconfig.ini ]; then
+	echo "Moving objectconfig.ini"
+	cp /root/zmeventnotification/objectconfig.ini /config/hook/objectconfig.ini.default
+	if [ ! -f /config/hook/objectconfig.ini ]; then
+		mv /root/zmeventnotification/objectconfig.ini /config/hook/objectconfig.ini
+	else
+		rm -rf /root/zmeventnotification/objectconfig.ini
+	fi
+else
+	echo "File objectconfig.ini already moved"
+fi
+
+# Handle the config_upgrade script
+if [ -f /root/zmeventnotification/config_upgrade.py ]; then
+	echo "Moving config_upgrade.py"
+	mv /root/zmeventnotification/config_upgrade.py /config/hook/config_upgrade.py
+	rm -rf /config/hook/config_upgrade.sh
+	chmod +x /config/hook/config_upgrade.*
+else
+	echo "File config_upgrade.py already moved"
+fi
+
+# Handle the zm_event_start.sh file
+if [ -f /root/zmeventnotification/zm_event_start.sh ]; then
+	echo "Moving zm_event_start.sh"
+	mv /root/zmeventnotification/zm_event_start.sh /config/hook/zm_event_start.sh
+else
+	echo "File zm_event_start.sh already moved"
+fi
+
+# Handle the zm_event_end.sh file
+if [ -f /root/zmeventnotification/zm_event_end.sh ]; then
+	echo "Moving zm_event_end.sh"
+	mv /root/zmeventnotification/zm_event_end.sh /config/hook/zm_event_end.sh
+else
+	echo "File zm_event_end.sh already moved"
+fi
+
+# Handle the zm_detect.py file
+if [ -f /root/zmeventnotification/zm_detect.py ]; then
+	echo "Moving zm_detect.py"
+	mv /root/zmeventnotification/zm_detect.py /config/hook/zm_detect.py
+else
+	echo "File zm_detect.py already moved"
+fi
+
+# Handle the zm_detect_old.py file
+if [ -f /root/zmeventnotification/zm_detect_old.py ]; then
+	echo "Moving zm_detect_old.py"
+	mv /root/zmeventnotification/zm_detect_old.py /config/hook/zm_detect_old.py
+else
+	echo "File zm_detect_old.py already moved"
+fi
+
+# Handle the zm_train_faces.py file
+if [ -f /root/zmeventnotification/zm_train_faces.py ]; then
+	echo "Moving zm_train_faces.py"
+	mv /root/zmeventnotification/zm_train_faces.py /config/hook/zm_train_faces.py
+else
+	echo "File zm_train_faces.py already moved"
+fi
+
+# Handle the train_faces.py file
+if [ -f /root/zmeventnotification/train_faces.py ]; then
+	echo "Moving train_faces.py"
+	mv /root/zmeventnotification/train_faces.py /config/hook/train_faces.py
+else
+	echo "File train_faces.py already moved"
+fi
+
+# Symbolic link for known_faces in /config
+rm -rf /var/lib/zmeventnotification/known_faces
+ln -sf /config/hook/known_faces /var/lib/zmeventnotification/known_faces
+chown -R www-data:www-data /var/lib/zmeventnotification/known_faces
+
+# Symbolic link for unknown_faces in /config
+rm -rf /var/lib/zmeventnotification/unknown_faces
+ln -sf /config/hook/unknown_faces /var/lib/zmeventnotification/unknown_faces
+chown -R www-data:www-data /var/lib/zmeventnotification/unknown_faces
+
+# Symbolic link for misc in /config
+rm -rf /var/lib/zmeventnotification/misc
+ln -sf /config/hook/misc /var/lib/zmeventnotification/misc
+chown -R www-data:www-data /var/lib/zmeventnotification/misc
+
+# Create misc folder if it doesn't exist
+if [ ! -d /config/hook/misc ]; then
+	echo "Creating hook/misc folder in config folder"
+	mkdir -p /config/hook/misc
+fi
+
+# Create coral_edgetpu folder if it doesn't exist
+if [ ! -d /config/hook/coral_edgetpu ]; then
+	echo "Creating hook/coral_edgetpu folder in config folder"
+	mkdir -p /config/hook/coral_edgetpu
+fi
+
+# Symbolic link for coral_edgetpu in /config
+rm -rf /var/lib/zmeventnotification/models/coral_edgetpu
+ln -sf /config/hook/coral_edgetpu/ /var/lib/zmeventnotification/models
+chown -R www-data:www-data /var/lib/zmeventnotification/models/coral_edgetpu 2>/dev/null
+
+# Symbolic link for hook files in /config
+mkdir -p /var/lib/zmeventnotification/bin
+ln -sf /config/hook/zm_detect.py /var/lib/zmeventnotification/bin/zm_detect.py
+ln -sf /config/hook/zm_detect_old.py /var/lib/zmeventnotification/bin/zm_detect_old.py
+ln -sf /config/hook/zm_train_faces.py /var/lib/zmeventnotification/bin/zm_train_faces.py
+ln -sf /config/hook/train_faces.py /var/lib/zmeventnotification/bin/train_faces.py
+ln -sf /config/hook/zm_event_start.sh /var/lib/zmeventnotification/bin/zm_event_start.sh
+ln -sf /config/hook/zm_event_end.sh /var/lib/zmeventnotification/bin/zm_event_end.sh
+chmod +x /var/lib/zmeventnotification/bin/*
+ln -sf /config/hook/objectconfig.ini /etc/zm/
+
+# Create known_faces folder if it doesn't exist
+if [ ! -d /config/hook/known_faces ]; then
+	echo "Creating hook/known_faces folder in config folder"
+	mkdir -p /config/hook/known_faces
+fi
+
+# Create unknown_faces folder if it doesn't exist
+if [ ! -d /config/hook/unknown_faces ]; then
+	echo "Creating hook/unknown_faces folder in config folder"
+	mkdir -p /config/hook/unknown_faces
+fi
+
+# Set hook folder permissions
+chown -R $PUID:$PGID /config/hook
+chmod -R 777 /config/hook
+
+# Compile opencv
+if [ -f /config/opencv/opencv_ok ] && [ `cat /config/opencv/opencv_ok` = 'yes' ]; then
+	if [ ! -f /root/setup.py ]; then
+		if [ -x /config/opencv/opencv.sh ]; then
+			/config/opencv/opencv.sh quiet &>/dev/null
+		fi
+	fi
+fi
+
+mv /root/zmeventnotification/setup.py /root/setup.py 2>/dev/null
+
+# Clean up mysql log files to insure mysql will start
+rm -f /config/mysql/ib_logfile* 2>/dev/null
+
 echo "Starting services..."
-service mysql start
-
-# Update the database if necessary
-zmupdate.pl -nointeractive
-zmupdate.pl -f
-
 service apache2 start
-service zoneminder start
+if [ "$NO_START_ZM" != "1" ]; then
+	# Start mysql
+	service mysql start
+
+	# Update the database if necessary
+	zmupdate.pl -nointeractive
+	zmupdate.pl -f
+
+	service zoneminder start
+else
+	echo "MySql and Zoneminder not started."
+fi

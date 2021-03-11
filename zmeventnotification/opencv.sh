@@ -10,38 +10,35 @@
 # You need to start with a clean docker image if you are going to recompile opencv.
 # This can be done by switching to "Advanced View" and clicking "Force Update", 
 # or remove the Docker image then reinstall it.
-# Hook processing has to be enabled to run this script.
 #
-# Install the Unraid Nvidia plugin and be sure your graphics card can be seen in the
+# Install the Unraid Nvidia drivers and be sure your graphics card can be seen in the
 # Zoneminder Docker.  This will also be checked as part of the compile process.
 # You will not get a working compile if your graphics card is not seen.  It may appear
 # to compile properly but will not work.
 #
-# The GPU architectures supported with cuda version 10.2 are all >= 3.0.
-#
-# Download the cuDNN run time and dev packages for your GPU configuration.  You want the deb packages for Ubuntu 18.04.
+# Download the cuDNN run time and dev packages for your GPU configuration.  You want the deb packages for Ubuntu 20.04.
 # You wll need to have an account with Nvidia to download these packages.
 # https://developer.nvidia.com/rdp/form/cudnn-download-survey
 # Place them in the /config/opencv/ folder.
 #
-CUDNN_RUN=libcudnn7_7.6.5.32-1+cuda10.2_amd64.deb
-CUDNN_DEV=libcudnn7-dev_7.6.5.32-1+cuda10.2_amd64.deb
+CUDNN_RUN=libcudnn8_8.0.5.39-1+cuda11.1_amd64.deb
+CUDNN_DEV=libcudnn8-dev_8.0.5.39-1+cuda11.1_amd64.deb
 #
-# Download the cuda tools package.  Unraid uses 10.2.  You want the deb package for Ubuntu 18.04.
-# https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&target_distro=Ubuntu&target_version=1804&target_type=deblocal
+# Download the cuda tools package.  You want the deb (local) package for Ubuntu 20.04.
+# https://developer.nvidia.com/cuda-downloads?target_os=Linux&target_arch=x86_64&target_distro=Ubuntu&target_version=2004&target_type=deblocal
 # Place the download in the /config/opencv/ folder.
 #
-CUDA_TOOL=cuda-repo-ubuntu1804-10-2-local-10.2.89-440.33.01_1.0-1_amd64.deb
-CUDA_PIN=cuda-ubuntu1804.pin
-CUDA_KEY=/var/cuda-repo-10-2-local-10.2.89-440.33.01/7fa2af80.pub
-CUDA_VER=10.2
+CUDA_TOOL=cuda-repo-ubuntu2004-11-2-local_11.2.0-460.27.04-1_amd64.deb
+CUDA_PIN=cuda-ubuntu2004.pin
+CUDA_KEY=/var/cuda-repo-ubuntu2004-11-2-local/7fa2af80.pub
+CUDA_VER=11.2
 #
 #
 # Github URL for opencv zip file download.
-# Current default is to pull the version 4.5.0 release.
+# Current default is to pull the version 4.5.1 release.
 #   Note: You shouldn't need to change these.
 #
-OPENCV_VER=4.5.0
+OPENCV_VER=4.5.1
 OPENCV_URL=https://github.com/opencv/opencv/archive/$OPENCV_VER.zip
 OPENCV_CONTRIB_URL=https://github.com/opencv/opencv_contrib/archive/$OPENCV_VER.zip
 #
@@ -126,20 +123,9 @@ if [[ $((MEM_AVAILABLE/1000)) -lt 4096 ]];then
 fi
 
 #
-# Insure hook processing has been installed.
+# Remove face-recognition module
 #
-if [ "$INSTALL_HOOK" != "1" ]; then
-	echo "Hook processing has to be installed before you can compile opencv!"
-	exit
-fi
-
-#
-# Remove hook installed opencv module and face-recognition module
-#
-pip3 uninstall -y opencv-contrib-python
-if [ "$INSTALL_FACE" == "1" ]; then
-	pip3 uninstall -y face-recognition
-fi
+pip3 uninstall -y face-recognition
 
 logger "Compiling opencv with GPU Support" -tEventServer
 
@@ -304,9 +290,7 @@ ldconfig
 #
 # Now reinstall face-recognition package to ensure it detects GPU.
 #
-if [ "$INSTALL_FACE" == "1" ]; then
-	pip3 install face-recognition
-fi
+pip3 install face-recognition
 
 #
 # Clean up/remove unnecessary packages
@@ -315,7 +299,6 @@ logger "Cleaning up..." -tEventServer
 
 cd ~
 rm -r opencv*
-rm /etc/my_init.d/20_apt_update.sh
 
 logger "Opencv compile completed" -tEventServer
 
